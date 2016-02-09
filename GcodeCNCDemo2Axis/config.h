@@ -28,6 +28,9 @@
 #define MAX_FEEDRATE   (250)
 #define MIN_FEEDRATE   (1)
 
+// Because my Y axis is not equal
+#define Y_AXIS_STRETCH (5)
+
 
 // for arc directions
 #define ARC_CW          (1)

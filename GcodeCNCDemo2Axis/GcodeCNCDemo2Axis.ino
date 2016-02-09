@@ -84,6 +84,8 @@ void line(float newx,float newy) {
   int diry=dy>0?-1:1;  // because the motors are mounted in opposite directions
   dx=abs(dx);
   dy=abs(dy);
+  
+  dy *= Y_AXIS_STRETCH;
 
   long i;
   long over=0;
