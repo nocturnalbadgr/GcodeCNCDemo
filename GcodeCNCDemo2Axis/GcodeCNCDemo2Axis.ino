@@ -299,6 +299,8 @@ void processCommand() {
     break;
   case 100:  help();  break;
   case 114:  where();  break;
+  case 221: analogWrite(9, 255); laserOn = true; Serial.print("Laser On\n"); break;
+  case 222: analogWrite(9, 0); laserOn = true; Serial.print("Laser Off\n"); break;
   default:  break;
   }
 }
