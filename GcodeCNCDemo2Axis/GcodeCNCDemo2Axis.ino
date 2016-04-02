@@ -24,6 +24,10 @@ long step_delay;  // machine version
 // settings
 char mode_abs=1;  // absolute mode?
 
+// laser
+bool laserOn = false;
+
+
 
 //------------------------------------------------------------------------------
 // METHODS
@@ -89,7 +93,18 @@ void line(float newx,float newy) {
 
   long i;
   long over=0;
-
+  
+  // Laser
+  
+  if (laserOn == true)
+  {
+      analogWrite(9, 255);
+  }
+  else
+  {
+      analogWrite(9, 0);
+  }
+  
   if(dx>dy) {
     for(i=0;i<dx;++i) {
       m1step(dirx);
@@ -111,7 +126,10 @@ void line(float newx,float newy) {
       pause(step_delay);
     }
   }
-
+  
+  analogWrite(9, 0); // Turn laser off after finishing line
+  laserOn = false;
+  
   px=newx;
   py=newy;
 }
@@ -240,8 +258,15 @@ void help() {
 void processCommand() {
   int cmd = parsenumber('G',-1);
   switch(cmd) {
-  case  0:
-  case  1: { // line
+  case  0: { // line without laser
+    laserOn = false;
+    feedrate(parsenumber('F',fr));
+    line( parsenumber('X',(mode_abs?px:0)) + (mode_abs?0:px),
+          parsenumber('Y',(mode_abs?py:0)) + (mode_abs?0:py) );
+    break;
+    }
+  case  1: { // line with laser
+    laserOn = true;
     feedrate(parsenumber('F',fr));
     line( parsenumber('X',(mode_abs?px:0)) + (mode_abs?0:px),
           parsenumber('Y',(mode_abs?py:0)) + (mode_abs?0:py) );
@@ -258,8 +283,8 @@ void processCommand() {
       break;
     }
   case  4:  pause(parsenumber('P',0)*1000);  break;  // dwell
-  case 90:  mode_abs=1;  break;  // absolute mode
-  case 91:  mode_abs=0;  break;  // relative mode
+  case 90:  mode_abs=1; Serial.print("Absolute Mode\n");  break;  // absolute mode
+  case 91:  mode_abs=0; Serial.print("Relative Mode\n"); break;  // relative mode
   case 92:  // set logical position
     position( parsenumber('X',0),
               parsenumber('Y',0) );
@@ -300,6 +325,9 @@ void setup() {
 
   help();  // say hello
   ready();
+  
+  // Laser
+  pinMode(9, OUTPUT);
 }
 
 
