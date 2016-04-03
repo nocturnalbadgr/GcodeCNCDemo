@@ -150,6 +150,7 @@ float atan3(float dy,float dx) {
 // x/y - end position
 // dir - ARC_CW or ARC_CCW to control direction of arc
 void arc(float cx,float cy,float x,float y,float dir) {
+  
   // get radius
   float dx = px - cx;
   float dy = py - cy;
@@ -171,7 +172,7 @@ void arc(float cx,float cy,float x,float y,float dir) {
   // simplifies to
   float len = abs(theta) * radius;
 
-  int i, segments = ceil( len * MM_PER_SEGMENT );
+  int i, segments = 1; // Setting this to 1 should effectively disable the arc interpolation and draw a line //ceil( len / MM_PER_SEGMENT );
  
   float nx, ny, angle3, scale;
 
