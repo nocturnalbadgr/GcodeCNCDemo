@@ -25,11 +25,11 @@
 #define MAX_BUF        (64)  // What is the longest message Arduino can store?
 #define STEPS_PER_TURN (400)  // depends on your stepper motor.  most are 200.
 #define MIN_STEP_DELAY (50.0)
-#define MAX_FEEDRATE   (250)
+#define MAX_FEEDRATE   (399)
 #define MIN_FEEDRATE   (1)
 
 // Because my Y axis is not equal
-#define Y_AXIS_STRETCH (5)
+#define Y_AXIS_STRETCH (4.608)
 
 
 // for arc directions

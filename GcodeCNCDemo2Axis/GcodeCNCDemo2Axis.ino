@@ -26,6 +26,7 @@ char mode_abs=1;  // absolute mode?
 
 // laser
 bool laserOn = false;
+int laserPower = 0;
 
 
 
@@ -98,7 +99,7 @@ void line(float newx,float newy) {
   
   if (laserOn == true)
   {
-      analogWrite(9, 255);
+      analogWrite(9, laserPower);
   }
   else
   {
@@ -184,9 +185,11 @@ void arc(float cx,float cy,float x,float y,float dir) {
     nx = cx + cos(angle3) * radius;
     ny = cy + sin(angle3) * radius;
     // send it to the planner
+    laserOn = true;
     line(nx,ny);
   }
   
+  laserOn = true;
   line(x,y);
 }
 
@@ -227,6 +230,11 @@ void where() {
   output("X",px);
   output("Y",py);
   output("F",fr);
+  if (laserOn)
+  {
+    Serial.print("Laser on at "); Serial.print(laserPower); Serial.print(" of 255\n");
+  }
+  else { Serial.print("Laser is off but power level is set to "); Serial.print(laserPower); Serial.print(" of 255\n"); }
   Serial.println(mode_abs?"ABS":"REL");
 } 
 
@@ -275,6 +283,7 @@ void processCommand() {
     }
   case 2:
   case 3: {  // arc
+      laserOn = true; // Laser should be on for both types of arcs.
       feedrate(parsenumber('F',fr));
       arc(parsenumber('I',(mode_abs?px:0)) + (mode_abs?0:px),
           parsenumber('J',(mode_abs?py:0)) + (mode_abs?0:py),
@@ -300,8 +309,9 @@ void processCommand() {
     break;
   case 100:  help();  break;
   case 114:  where();  break;
-  case 221: analogWrite(9, 255); laserOn = true; Serial.print("Laser On\n"); break;
-  case 222: analogWrite(9, 0); laserOn = true; Serial.print("Laser Off\n"); break;
+  case 4: analogWrite(9, laserPower); laserOn = true; Serial.print("Laser on at "); Serial.print(laserPower); Serial.print(" of 255\n"); break;
+  case 5: analogWrite(9, 0); laserOn = false; Serial.print("Laser Off\n"); break;
+  case 221: laserPower = parsenumber('B', 0); Serial.print("Laser power set to "); Serial.print(laserPower); Serial.print(" of 255\n"); break;
   default:  break;
   }
 }
