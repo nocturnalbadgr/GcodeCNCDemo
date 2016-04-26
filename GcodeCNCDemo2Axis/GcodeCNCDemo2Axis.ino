@@ -27,12 +27,64 @@ char mode_abs=1;  // absolute mode?
 // laser
 bool laserOn = false;
 int laserPower = 0;
+int laserCooldownTimer = 0;
+long unsigned int laserPowerOnTime = 0;
+long unsigned int laserPowerOffTime = 0;
 
 
 
 //------------------------------------------------------------------------------
 // METHODS
 //------------------------------------------------------------------------------
+
+void updateLaserState(int toggle) // 0 for no change 1 for off 2 for on
+{
+    //Serial.print(laserOn); Serial.print( laserPowerOffTime); Serial.print( laserPowerOnTime); Serial.print( toggle);
+    if (laserOn == true)
+    {
+        laserCooldownTimer = (millis() - laserPowerOnTime);
+        if (laserCooldownTimer > LASER_DUTY_CYCLE_MAX)
+        {
+            while (laserCooldownTimer > 0)
+            {
+                analogWrite(9, 0);
+                laserCooldownTimer -= 500;
+                delay(1000);
+                Serial.print("Halting for laser cooldown. "); Serial.print((laserCooldownTimer * 2) / 1000); Serial.print(" seconds to go.\n");
+            }
+            laserPowerOnTime = millis();
+            updateLaserState(0);
+        }
+ 
+        analogWrite(9, laserPower);
+        
+        if (toggle == 1 || laserPower == 0)
+        {
+            laserPowerOffTime = millis();
+            analogWrite(9, 0);
+            laserOn = false;
+        }
+    }
+    else
+    {
+        if (laserCooldownTimer > 0) 
+        { 
+            laserCooldownTimer -= ((millis() - laserPowerOffTime) / 2);
+        }
+        else { laserCooldownTimer = 0; }
+        
+        if (toggle == 2)
+        {
+            if (laserCooldownTimer < LASER_DUTY_CYCLE_MAX) 
+            {
+                analogWrite(9, laserPower);
+                laserOn = true;
+                laserPowerOnTime = millis();
+            }
+        }
+    }    
+}
+
 
 
 /**
@@ -95,19 +147,11 @@ void line(float newx,float newy) {
   long i;
   long over=0;
   
-  // Laser
-  
-  if (laserOn == true)
-  {
-      analogWrite(9, laserPower);
-  }
-  else
-  {
-      analogWrite(9, 0);
-  }
-  
   if(dx>dy) {
     for(i=0;i<dx;++i) {
+      
+      updateLaserState(0);
+      
       m1step(dirx);
       over+=dy;
       if(over>=dx) {
@@ -118,6 +162,9 @@ void line(float newx,float newy) {
     }
   } else {
     for(i=0;i<dy;++i) {
+      
+      updateLaserState(0);
+      
       m2step(diry);
       over+=dx;
       if(over>=dy) {
@@ -128,8 +175,7 @@ void line(float newx,float newy) {
     }
   }
   
-  analogWrite(9, 0); // Turn laser off after finishing line
-  laserOn = false;
+  updateLaserState(1); // Turn laser off after finishing line
   
   px=newx;
   py=newy;
@@ -185,11 +231,11 @@ void arc(float cx,float cy,float x,float y,float dir) {
     nx = cx + cos(angle3) * radius;
     ny = cy + sin(angle3) * radius;
     // send it to the planner
-    laserOn = true;
+    updateLaserState(2);
     line(nx,ny);
   }
   
-  laserOn = true;
+  updateLaserState(2);
   line(x,y);
 }
 
@@ -268,14 +314,14 @@ void processCommand() {
   int cmd = parsenumber('G',-1);
   switch(cmd) {
   case  0: { // line without laser
-    laserOn = false;
+    updateLaserState(1);
     feedrate(parsenumber('F',fr));
     line( parsenumber('X',(mode_abs?px:0)) + (mode_abs?0:px),
           parsenumber('Y',(mode_abs?py:0)) + (mode_abs?0:py) );
     break;
     }
   case  1: { // line with laser
-    laserOn = true;
+    updateLaserState(2);
     feedrate(parsenumber('F',fr));
     line( parsenumber('X',(mode_abs?px:0)) + (mode_abs?0:px),
           parsenumber('Y',(mode_abs?py:0)) + (mode_abs?0:py) );
@@ -283,7 +329,7 @@ void processCommand() {
     }
   case 2:
   case 3: {  // arc
-      laserOn = true; // Laser should be on for both types of arcs.
+      updateLaserState(2); // Laser should be on for both types of arcs.
       feedrate(parsenumber('F',fr));
       arc(parsenumber('I',(mode_abs?px:0)) + (mode_abs?0:px),
           parsenumber('J',(mode_abs?py:0)) + (mode_abs?0:py),
@@ -309,8 +355,8 @@ void processCommand() {
     break;
   case 100:  help();  break;
   case 114:  where();  break;
-  case 4: laserPower = parsenumber('B', laserPower); analogWrite(9, laserPower); laserOn = true; Serial.print("Laser on at "); Serial.print(laserPower); Serial.print(" of 255\n"); break;
-  case 5: analogWrite(9, 0); laserOn = false; Serial.print("Laser Off\n"); break;
+  case 4: laserPower = parsenumber('B', laserPower); updateLaserState(2);  Serial.print("Laser on at "); Serial.print(laserPower); Serial.print(" of 255\n"); break;
+  case 5: updateLaserState(1); Serial.print("Laser Off\n"); break;
   case 221: laserPower = parsenumber('B', 0); Serial.print("Laser power set to "); Serial.print(laserPower); Serial.print(" of 255\n"); break;
   default:  break;
   }
@@ -341,6 +387,7 @@ void setup() {
   
   // Laser
   pinMode(9, OUTPUT);
+  
 }
 
 
@@ -348,6 +395,9 @@ void setup() {
  * After setup() this machine will repeat loop() forever.
  */
 void loop() {
+  
+  updateLaserState(0);
+  
   // listen for serial commands
   while(Serial.available() > 0) {  // if something is available
     char c=Serial.read();  // get it
