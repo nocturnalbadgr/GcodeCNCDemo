@@ -309,7 +309,7 @@ void processCommand() {
     break;
   case 100:  help();  break;
   case 114:  where();  break;
-  case 4: analogWrite(9, laserPower); laserOn = true; Serial.print("Laser on at "); Serial.print(laserPower); Serial.print(" of 255\n"); break;
+  case 4: laserPower = parsenumber('B', laserPower); analogWrite(9, laserPower); laserOn = true; Serial.print("Laser on at "); Serial.print(laserPower); Serial.print(" of 255\n"); break;
   case 5: analogWrite(9, 0); laserOn = false; Serial.print("Laser Off\n"); break;
   case 221: laserPower = parsenumber('B', 0); Serial.print("Laser power set to "); Serial.print(laserPower); Serial.print(" of 255\n"); break;
   default:  break;
