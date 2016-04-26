@@ -39,10 +39,11 @@ long unsigned int laserPowerOffTime = 0;
 
 void updateLaserState(int toggle) // 0 for no change 1 for off 2 for on
 {
-    //Serial.print(laserOn); Serial.print( laserPowerOffTime); Serial.print( laserPowerOnTime); Serial.print( toggle);
+    if (laserCooldownTimer != 0) { Serial.println(laserCooldownTimer); }
     if (laserOn == true)
     {
-        laserCooldownTimer = (millis() - laserPowerOnTime);
+        laserCooldownTimer += (millis() - laserPowerOnTime);
+        laserPowerOnTime = millis();
         if (laserCooldownTimer > LASER_DUTY_CYCLE_MAX)
         {
             while (laserCooldownTimer > 0)
@@ -70,6 +71,7 @@ void updateLaserState(int toggle) // 0 for no change 1 for off 2 for on
         if (laserCooldownTimer > 0) 
         { 
             laserCooldownTimer -= ((millis() - laserPowerOffTime) / 2);
+            laserPowerOffTime = millis();
         }
         else { laserCooldownTimer = 0; }
         
