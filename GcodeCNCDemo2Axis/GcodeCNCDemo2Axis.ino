@@ -306,6 +306,9 @@ void help() {
   Serial.println(F("M100; - this help message"));
   Serial.println(F("M114; - report position and feedrate"));
   Serial.println(F("All commands must end with a newline."));
+  Serial.println(F("M4 [B(brightness)] - turn on laser"));
+  Serial.println(F("M5 - disable laser"));
+  Serial.println(F("M221 [B(brightness)] - set laser power without turning it on"));
 }
 
 
