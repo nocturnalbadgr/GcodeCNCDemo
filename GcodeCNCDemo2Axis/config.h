@@ -38,7 +38,7 @@
 // Arcs are split into many line segments.  How long are the segments?
 #define MM_PER_SEGMENT  (10)
 
-#define LASER_DUTY_CYCLE_MAX (180000) // Duration limit for overheat in milliseconds
+#define LASER_DUTY_CYCLE_MAX (120000) // Duration limit for overheat in milliseconds
 
 //------------------------------------------------------------------------------
 // METHODS

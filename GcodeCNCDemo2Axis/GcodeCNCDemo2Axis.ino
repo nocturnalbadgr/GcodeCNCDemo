@@ -39,7 +39,6 @@ long unsigned int laserPowerOffTime = 0;
 
 void updateLaserState(int toggle) // 0 for no change 1 for off 2 for on
 {
-    if (laserCooldownTimer != 0) { Serial.println(laserCooldownTimer); }
     if (laserOn == true)
     {
         laserCooldownTimer += (millis() - laserPowerOnTime);
@@ -306,9 +305,9 @@ void help() {
   Serial.println(F("M100; - this help message"));
   Serial.println(F("M114; - report position and feedrate"));
   Serial.println(F("All commands must end with a newline."));
-  Serial.println(F("M4 [B(brightness)] - turn on laser"));
-  Serial.println(F("M5 - disable laser"));
-  Serial.println(F("M221 [B(brightness)] - set laser power without turning it on"));
+  Serial.println(F("M4 [B(brightness)]; - turn on laser"));
+  Serial.println(F("M5; - disable laser"));
+  Serial.println(F("M221 [B(brightness)]; - set laser power without turning it on"));
 }
 
 
