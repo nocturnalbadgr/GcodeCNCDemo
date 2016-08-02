@@ -1,6 +1,12 @@
 //------------------------------------------------------------------------------
-// 6 Axis CNC Demo v2 - supports Adafruit motor shield v2
-// dan@marginallycelver.com 2013-09-07
+// 4 Axis CNC Demo  - supports CNCShieldV3 on arduino UNO
+// dan@marginallyclever.com 2013-10-28
+// Modified by Søren Vedel
+// sorenvedel@gmail.com 2015-06-19
+// Modified by Cristian Leiva
+// cristianleiva@gmail.com 2016-04-28
+// add Support cncshield - feed rate in mm/min
+
 //------------------------------------------------------------------------------
 // Copyright at end of file.
 // please see http://www.github.com/MarginallyClever/GcodeCNCDemo for more information.
@@ -12,27 +18,13 @@
 //#define VERBOSE              (1)  // add to get a lot more serial output.
 
 #define VERSION              (2)  // firmware version
-#define BAUD                 (57600)  // How fast is the Arduino talking?
+#define BAUD                 (115200)  // How fast is the Arduino talking?
 #define MAX_BUF              (64)  // What is the longest message Arduino can store?
-#define STEPS_PER_TURN       (400)  // depends on your stepper motor.  most are 200.
-#define MIN_STEP_DELAY       (50)
-#define MAX_FEEDRATE         (1000000/MIN_STEP_DELAY)
-#define MIN_FEEDRATE         (0.01)
-#define NUM_AXIES            (6)
-
-// for arc directions
-#define ARC_CW          (1)
-#define ARC_CCW         (-1)
-// Arcs are split into many line segments.  How long are the segments?
-#define MM_PER_SEGMENT  (10)
-
-
-//------------------------------------------------------------------------------
-// INCLUDES
-//------------------------------------------------------------------------------
-#include <Wire.h>
-#include <Adafruit_MotorShield.h>
-#include "utility/Adafruit_PWMServoDriver.h"
+#define STEPS_PER_TURN       (200)  // depends on your stepper motor.  most are 200.
+#define STEPS_PER_MM         (STEPS_PER_TURN*16/0.8)  // (400*16)/0.8 with a M5 spindle
+#define MAX_FEEDRATE         (1000000)
+#define MIN_FEEDRATE         (1)
+#define NUM_AXIES            (4)
 
 
 //------------------------------------------------------------------------------
@@ -40,28 +32,26 @@
 //------------------------------------------------------------------------------
 // for line()
 typedef struct {
-  long delta;
+  long delta;  // number of steps to move
   long absdelta;
-  int dir;
-  long over;
+  long over;  // for dx/dy bresenham calculations
 } Axis;
 
+
+typedef struct {
+  int step_pin;
+  int dir_pin;
+  int enable_pin;
+  int limit_switch_pin;
+} Motor;
 
 
 //------------------------------------------------------------------------------
 // GLOBALS
 //------------------------------------------------------------------------------
-// Initialize Adafruit stepper controller
-Adafruit_MotorShield AFMS0 = Adafruit_MotorShield(0x61);
-Adafruit_MotorShield AFMS1 = Adafruit_MotorShield(0x60);
-Adafruit_MotorShield AFMS2 = Adafruit_MotorShield(0x63);
-// Connect stepper motors with 400 steps per revolution (1.8 degree)
-// Create the motor shield object with the default I2C address
-Adafruit_StepperMotor *m[NUM_AXIES];
-
-
 Axis a[NUM_AXIES];  // for line()
 Axis atemp;  // for line()
+Motor motors[NUM_AXIES];
 
 char buffer[MAX_BUF];  // where we store the message until we get a ';'
 int sofar;  // how much is in the buffer
@@ -70,12 +60,13 @@ int sofar;  // how much is in the buffer
 float fr=0;  // human version
 long step_delay;  // machine version
 
-float px,py,pz,pu,pv,pw;  // position
+float px,py,pz,pe;  // position
 
 // settings
 char mode_abs=1;  // absolute mode?
 
 long line_number=0;
+
 
 //------------------------------------------------------------------------------
 // METHODS
@@ -97,6 +88,7 @@ void pause(long ms) {
  * @input nfr the new speed in steps/second
  */
 void feedrate(float nfr) {
+  nfr = nfr*STEPS_PER_MM/60; 
   if(fr==nfr) return;  // same as last time?  quit now.
 
   if(nfr>MAX_FEEDRATE || nfr<MIN_FEEDRATE) {  // don't allow crazy feed rates
@@ -107,7 +99,7 @@ void feedrate(float nfr) {
     Serial.println(F("steps/s."));
     return;
   }
-  step_delay = 1000000.0/nfr;
+  step_delay = MAX_FEEDRATE/nfr;
   fr=nfr;
 }
 
@@ -117,14 +109,12 @@ void feedrate(float nfr) {
  * @input npx new position x
  * @input npy new position y
  */
-void position(float npx,float npy,float npz,float npu,float npv,float npw) {
+void position(float npx,float npy,float npz,float npe) {
   // here is a good place to add sanity tests
   px=npx;
   py=npy;
   pz=npz;
-  pu=npu;
-  pv=npv;
-  pw=npw;
+  pe=npe;
 }
 
 
@@ -133,24 +123,14 @@ void position(float npx,float npy,float npz,float npu,float npv,float npw) {
  * @input newx the destination x position
  * @input newy the destination y position
  **/
-void onestep(int motor,int direction) {
+void onestep(int motor) {
 #ifdef VERBOSE
-  char *letter="UVWXYZ";
-  Serial.print(letter[motor]);
+  char *letter="XYZE";
+  Serial.print(letter[]);
 #endif
-//  m[motor]->onestep(direction>0?FORWARD:BACKWARD,MICROSTEP);
-  m[motor]->onestep(direction>0?FORWARD:BACKWARD,INTERLEAVE);
-}
-
-
-/**
- * Releases the power on the motors
- **/
-void release() {
-  int i;
-  for(i=0;i<NUM_AXIES;++i) {
-    m[i]->release();
-  }
+  
+  digitalWrite(motors[motor].step_pin,HIGH);
+  digitalWrite(motors[motor].step_pin,LOW);
 }
 
 
@@ -159,50 +139,72 @@ void release() {
  * @input newx the destination x position
  * @input newy the destination y position
  **/
-void line(float newx,float newy,float newz,float newu,float newv,float neww) {
-  a[0].delta = newx-px;
-  a[1].delta = newy-py;
-  a[2].delta = newz-pz;
-  a[3].delta = newu-pu;
-  a[4].delta = newv-pv;
-  a[5].delta = neww-pw;
+void line(float newx,float newy,float newz,float newe) {
+  a[0].delta = (newx-px)*STEPS_PER_MM;
+  a[1].delta = (newy-py)*STEPS_PER_MM;
+  a[2].delta = (newz-pz)*STEPS_PER_MM;
+  a[3].delta = (newe-pe)*STEPS_PER_MM;
   
   long i,j,maxsteps=0;
 
   for(i=0;i<NUM_AXIES;++i) {
-    a[i].dir=a[i].delta > 0 ? 1:-1;
     a[i].absdelta = abs(a[i].delta);
+    a[i].over=0;
     if( maxsteps < a[i].absdelta ) maxsteps = a[i].absdelta;
+    // set the direction once per movement
+    digitalWrite(motors[i].dir_pin,a[i].delta>0?HIGH:LOW);
   }
-  for(i=0;i<NUM_AXIES;++i) {
-    a[i].over=maxsteps/2;
-  }
-
-  a[0].dir=-a[0].dir;  // because the motors are mounted in opposite directions
-  a[1].dir=-a[1].dir;  // because the motors are mounted in opposite directions
-  a[2].dir=-a[2].dir;  // because the motors are mounted in opposite directions
-
   
+  long dt = MAX_FEEDRATE/5000;
+  long accel = 1;
+  long steps_to_accel = dt - step_delay;
+  if(steps_to_accel > maxsteps/2 ) 
+    steps_to_accel = maxsteps/2;
+    
+  long steps_to_decel = maxsteps - steps_to_accel;
+
+  Serial.print("START ");
+  Serial.println(dt);
+  Serial.print("STOP ");
+  Serial.println(step_delay);
+  
+  Serial.print("accel until ");
+  Serial.println(steps_to_accel);  
+  Serial.print("decel after ");
+  Serial.println(steps_to_decel);  
+  Serial.print("total ");
+  Serial.println(maxsteps);  
 #ifdef VERBOSE
   Serial.println(F("Start >"));
 #endif
-  
+
   for( i=0; i<maxsteps; ++i ) {
     for(j=0;j<NUM_AXIES;++j) {
       a[j].over += a[j].absdelta;
       if(a[j].over >= maxsteps) {
         a[j].over -= maxsteps;
-        onestep(j,a[j].dir);
+        
+        digitalWrite(motors[j].step_pin,HIGH);
+        digitalWrite(motors[j].step_pin,LOW);
       }
     }
-    pause(step_delay);
+
+    if(i<steps_to_accel) {
+      dt -= accel;
+    }
+    if(i>=steps_to_decel) {
+      dt += accel;
+    }
+    delayMicroseconds(dt);
   }
 
 #ifdef VERBOSE
   Serial.println(F("< Done."));
 #endif
 
-  position(newx,newy,newz,newu,newv,neww);
+  position(newx,newy,newz,newe);
+
+  where();
 }
 
 
@@ -213,52 +215,6 @@ static float atan3(float dy,float dx) {
   return a;
 }
 
-
-// This method assumes the limits have already been checked.
-// This method assumes the start and end radius match.
-// This method assumes arcs are not >180 degrees (PI radians)
-// cx/cy - center of circle
-// x/y - end position
-// dir - ARC_CW or ARC_CCW to control direction of arc
-static void arc(float cx,float cy,float x,float y,float dir) {
-  // get radius
-  float dx = px - cx;
-  float dy = py - cy;
-  float radius=sqrt(dx*dx+dy*dy);
-
-  // find angle of arc (sweep)
-  float angle1=atan3(dy,dx);
-  float angle2=atan3(y-cy,x-cx);
-  float theta=angle2-angle1;
-  
-  if(dir>0 && theta<0) angle2+=2*PI;
-  else if(dir<0 && theta>0) angle1+=2*PI;
-  
-  theta=angle2-angle1;
-  
-  // get length of arc
-  // float circ=PI*2.0*radius;
-  // float len=theta*circ/(PI*2.0);
-  // simplifies to
-  float len = abs(theta) * radius;
-
-  int i, segments = ceil( len * MM_PER_SEGMENT );
- 
-  float nx, ny, angle3, scale;
-
-  for(i=0;i<segments;++i) {
-    // interpolate around the arc
-    scale = ((float)i)/((float)segments);
-    
-    angle3 = ( theta * scale ) + angle1;
-    nx = cx + cos(angle3) * radius;
-    ny = cy + sin(angle3) * radius;
-    // send it to the planner
-    line(nx,ny,pz,pu,pv,pw);
-  }
-  
-  line(x,y,pz,pu,pv,pw);
-}
 
 
 /**
@@ -286,7 +242,8 @@ float parsenumber(char code,float val) {
  */
 void output(char *code,float val) {
   Serial.print(code);
-  Serial.println(val);
+  Serial.print(val);
+  Serial.print(" ");
 }
 
 
@@ -297,10 +254,8 @@ void where() {
   output("X",px);
   output("Y",py);
   output("Z",pz);
-  output("U",pu);
-  output("V",pv);
-  output("W",pw);
-  output("F",fr);
+  output("E",pe);
+  output("F",fr/STEPS_PER_MM*60);
   Serial.println(mode_abs?"ABS":"REL");
 } 
 
@@ -312,13 +267,11 @@ void help() {
   Serial.print(F("GcodeCNCDemo6AxisV2 "));
   Serial.println(VERSION);
   Serial.println(F("Commands:"));
-  Serial.println(F("G00/G01 [X/Y/Z/U/V/W(steps)] [F(feedrate)]; - linear move"));
-  Serial.println(F("G02 [X(steps)] [Y(steps)] [I(steps)] [J(steps)] [F(feedrate)]; - clockwise arc"));
-  Serial.println(F("G03 [X(steps)] [Y(steps)] [I(steps)] [J(steps)] [F(feedrate)]; - counter-clockwise arc"));
+  Serial.println(F("G00/G01 [X/Y/Z/E(steps)] [F(feedrate)]; - linear move"));
   Serial.println(F("G04 P[seconds]; - delay"));
   Serial.println(F("G90; - absolute mode"));
   Serial.println(F("G91; - relative mode"));
-  Serial.println(F("G92 [X/Y/Z/U/V/W(steps)]; - change logical position"));
+  Serial.println(F("G92 [X/Y/Z/E(steps)]; - change logical position"));
   Serial.println(F("M18; - disable motors"));
   Serial.println(F("M100; - this help message"));
   Serial.println(F("M114; - report position and feedrate"));
@@ -338,21 +291,10 @@ void processCommand() {
     line( parsenumber('X',(mode_abs?px:0)) + (mode_abs?0:px),
           parsenumber('Y',(mode_abs?py:0)) + (mode_abs?0:py),
           parsenumber('Z',(mode_abs?pz:0)) + (mode_abs?0:pz),
-          parsenumber('U',(mode_abs?pu:0)) + (mode_abs?0:pu),
-          parsenumber('V',(mode_abs?pv:0)) + (mode_abs?0:pv),
-          parsenumber('W',(mode_abs?pw:0)) + (mode_abs?0:pw) );
+          parsenumber('E',(mode_abs?pe:0)) + (mode_abs?0:pe) );
     break;
     }
-  case 2:
-  case 3: {  // arc
-      feedrate(parsenumber('F',fr));
-      arc(parsenumber('I',(mode_abs?px:0)) + (mode_abs?0:px),
-          parsenumber('J',(mode_abs?py:0)) + (mode_abs?0:py),
-          parsenumber('X',(mode_abs?px:0)) + (mode_abs?0:px),
-          parsenumber('Y',(mode_abs?py:0)) + (mode_abs?0:py),
-          (cmd==2) ? -1 : 1);
-      break;
-    }
+  case  2:
   case  4:  pause(parsenumber('P',0)*1000);  break;  // dwell
   case 90:  mode_abs=1;  break;  // absolute mode
   case 91:  mode_abs=0;  break;  // relative mode
@@ -360,18 +302,15 @@ void processCommand() {
     position( parsenumber('X',0),
               parsenumber('Y',0),
               parsenumber('Z',0),
-              parsenumber('U',0),
-              parsenumber('V',0),
-              parsenumber('W',0) );
+              parsenumber('E',0) );
     break;
   default:  break;
   }
 
   cmd = parsenumber('M',-1);
   switch(cmd) {
-  case 18:  // disable motors
-    release();
-    break;
+  case  17:  motor_enable();  break;
+  case  18:  motor_disable();  break;
   case 100:  help();  break;
   case 114:  where();  break;
   default:  break;
@@ -389,25 +328,70 @@ void ready() {
 
 
 /**
+ * set up the pins for each motor
+ * Pins fits a CNCshieldV3.xx
+ */
+void motor_setup() {
+  motors[0].step_pin=2;
+  motors[0].dir_pin=5;
+  motors[0].enable_pin=8;
+  motors[0].limit_switch_pin=9;
+
+  motors[1].step_pin=3;
+  motors[1].dir_pin=6;
+  motors[1].enable_pin=8;
+  motors[1].limit_switch_pin=10;
+
+  motors[2].step_pin=4;
+  motors[2].dir_pin=7;
+  motors[2].enable_pin=8;
+  motors[2].limit_switch_pin=11;
+
+  motors[3].step_pin=12;
+  motors[3].dir_pin=13;
+  motors[3].enable_pin=8;
+  motors[3].limit_switch_pin=11;
+  
+  int i;
+  for(i=0;i<NUM_AXIES;++i) {  
+    // set the motor pin & scale
+    pinMode(motors[i].step_pin,OUTPUT);
+    pinMode(motors[i].dir_pin,OUTPUT);
+    pinMode(motors[i].enable_pin,OUTPUT);
+  }
+}
+
+
+void motor_enable() {
+  int i;
+  for(i=0;i<NUM_AXIES;++i) {  
+    digitalWrite(motors[i].enable_pin,LOW);
+  }
+}
+
+
+void motor_disable() {
+  int i;
+  for(i=0;i<NUM_AXIES;++i) {  
+    digitalWrite(motors[i].enable_pin,HIGH);
+  }
+}
+
+
+/**
  * First thing this machine does on startup.  Runs only once.
  */
 void setup() {
   Serial.begin(BAUD);  // open coms
 
-  AFMS0.begin(); // Start the shields
-  AFMS1.begin();
-  AFMS2.begin();
+  motor_setup();
+  motor_enable();
   
-  m[0] = AFMS0.getStepper(STEPS_PER_TURN, 1);
-  m[1] = AFMS0.getStepper(STEPS_PER_TURN, 2);
-  m[2] = AFMS1.getStepper(STEPS_PER_TURN, 1);
-  m[3] = AFMS1.getStepper(STEPS_PER_TURN, 2);
-  m[4] = AFMS2.getStepper(STEPS_PER_TURN, 1);
-  m[5] = AFMS2.getStepper(STEPS_PER_TURN, 2);
-
+  
+  where();  // for debugging purposes
   help();  // say hello
-  position(0,0,0,0,0,0);  // set staring position
-  feedrate(200);  // set default speed
+  position(0,0,0,0);  // set starting position
+  feedrate(1000);  // set default speed
   ready();
 }
 

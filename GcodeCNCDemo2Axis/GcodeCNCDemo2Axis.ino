@@ -149,6 +149,7 @@ void line(float newx,float newy) {
   long over=0;
   
   if(dx>dy) {
+    over=dx/2;
     for(i=0;i<dx;++i) {
       
       updateLaserState(0);
@@ -162,6 +163,7 @@ void line(float newx,float newy) {
       pause(step_delay);
     }
   } else {
+    over=dy/2;
     for(i=0;i<dy;++i) {
       
       updateLaserState(0);
